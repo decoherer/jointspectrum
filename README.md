@@ -55,11 +55,10 @@ We will show the Gaussian ellipse has a purity
 $$ P = \sqrt{1-\frac{B^2}{AC}}. $$
 
 Define:
-\begin{align*}
-A & = \frac{1+\mu^2}{2(1-\mu^2)} \alpha_1^2 \\
-B & = \frac{\mu}{1-\mu^2} \alpha_1\alpha_2 \\
-C & = \frac{1+\mu^2}{2(1-\mu^2)} \alpha_2^2 \\
-\end{align*}
+
+$$ A = \frac{1+\mu^2}{2(1-\mu^2)} \alpha_1^2 $$
+$$ B = \frac{\mu}{1-\mu^2} \alpha_1\alpha_2 $$
+$$ C = \frac{1+\mu^2}{2(1-\mu^2)} \alpha_2^2 $$
 
 Then $f$ has the following Schmidt decomposition [[ref]](https://arxiv.org/abs/quant-ph/0305192):
 
@@ -75,19 +74,20 @@ and $H_n(x)$ are the Hermite polynomials [[ref]](https://en.wikipedia.org/wiki/H
 
 <!-- $H_0(x)=1$, $H_1(x)=2x$, $H_2(x)=4x^2-2$, $H_3(x)=8x^3-12x$, $H_4(x)=16x^4-48x^2+12$, ... -->
 
-\begin{align*}
-H_0(x) & = 1 \\
-H_1(x) & = 2x \\
-H_2(x) & = 4x^2 - 2 \\
-H_3(x) & = 8x^3 - 12x \\
-H_4(x) & = 16x^4 - 48x^2 + 12
-\end{align*}
+$$ H_0(x) = 1 $$
+$$ H_1(x) = 2x $$
+$$ H_2(x) = 4x^2 - 2 $$
+$$ H_3(x) = 8x^3 - 12x $$
 
 Furthermore, the Schmidt number K and purity P are
 
 $$ P = \frac{1}{K} = \frac{1-\mu^2}{1+\mu^2}. $$
 
-Observe that the quantity $1 - \frac{B^2}{AC} = \left( \frac{1-\mu^2}{1+\mu^2} \right)^2 = P^2 $ so the purity in terms of $A$, $B$, $C$ is:
+Observe that the quantity
+
+$$ 1 - \frac{B^2}{AC} = \left( \frac{1-\mu^2}{1+\mu^2} \right)^2 = P^2 $$
+
+so the purity in terms of $A$, $B$, $C$ is:
 
 $$ P = \sqrt{1-\frac{B^2}{AC}} $$
 
@@ -130,25 +130,29 @@ $$ B = -(p+q\sin\theta\cos\theta) $$
 $$ C = p+q\cos^2\theta $$
 
 Also defining $r ≡ p/q$, the purity is
+
 $$ P = \sqrt{1 - \frac{B^2}{AC}} = \sqrt{1 - \frac{(r+\sin\theta\cos\theta)^2}{(r+\sin^2\theta)(r+\cos^2\theta)}} $$
 
 We can observe that unit purity is obtained when θ<0 and $|r=\sin\theta\cos\theta|$. For θ>0 we find that $\frac{d}{dr}P=0$ when $r=\sin\theta\cos\theta$. So in both cases we obtain maximum purity when
+
 $$ r = \frac{p}{q} = |\sin\theta\cos\theta|  = \left|\frac{1}{2}\sin2\theta\right|. $$
 
 And the maximum purity obtained is
 
+$$ P = 1 \text{ if } -\frac{\pi}{2} < \theta < 0 $$
+$$ P = \left|\frac{1-\tan\theta}{1+\tan\theta}\right| \text{ if } 0 < \theta < \frac{\pi}{2} $$
+
+<!-- 
 $$
 P =
 \left\{
 \begin{aligned}
-& \phantom{xxxx} 1 \phantom{xxxx} & \text{if}& & -\frac{\pi}{2} < \theta < 0 \\
+&  1  & \text{if}& & -\frac{\pi}{2} < \theta < 0 \\
 &\left|\frac{1-\tan\theta}{1+\tan\theta}\right| & \text{if}& & 0 < \theta < \frac{\pi}{2}
 \end{aligned}
 \right.
 $$
-
-
-
+-->
 
 
 ```python
