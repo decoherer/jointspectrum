@@ -196,7 +196,7 @@ $$ \int e^{ -ay^2 + 2by } dy = \int e^{ -a(y-\frac{b}{a})^2 } e^{ \frac{b^2}{a} 
 
 Therefore
 
-$$ h(x,z) = \exp{\left( -(A-\tfrac{B^2}{C+D}) x^2 \right)}
+$$ h(x,z) = \sqrt{\tfrac{\pi}{C+D}} \exp{\left( -(A-\tfrac{B^2}{C+D}) x^2 \right)}
             \exp{\left( +2(\tfrac{BE}{C+D}) xz \right)} 
             \exp{\left( -(F-\tfrac{E^2}{C+D}) z^2 \right)} $$
 
