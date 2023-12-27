@@ -141,6 +141,7 @@ $$ r = \frac{p}{q} = |\sin\theta\cos\theta|  = \left|\frac{1}{2}\sin2\theta\righ
 And the maximum purity obtained is
 
 $$ P = 1 \text{ if } -\frac{\pi}{2} < \theta < 0 $$
+
 $$ P = \left|\frac{1-\tan\theta}{1+\tan\theta}\right| \text{ if } 0 < \theta < \frac{\pi}{2} $$
 
 <!-- 
