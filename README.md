@@ -84,7 +84,7 @@ $$ H_2(x) = 4x^2 - 2 $$
 
 $$ H_3(x) = 8x^3 - 12x $$
 
-Furthermore, the Schmidt number K and purity P are
+Furthermore, the Schmidt number $K$ and purity $P$ are
 
 $$ P = \frac{1}{K} = \frac{1-\mu^2}{1+\mu^2}. $$
 
@@ -139,7 +139,7 @@ Also defining $r ≡ p/q$, the purity is
 
 $$ P = \sqrt{1 - \frac{B^2}{AC}} = \sqrt{1 - \frac{(r+\sin\theta\cos\theta)^2}{(r+\sin^2\theta)(r+\cos^2\theta)}} $$
 
-We can observe that unit purity is obtained when θ<0 and $r=|\sin\theta\cos\theta|$. For θ>0 we find that $\frac{d}{dr}P=0$ when $r=\sin\theta\cos\theta$. So in both cases we obtain maximum purity when
+We can observe that unit purity is obtained when $θ<0$ and $r=|\sin\theta\cos\theta|$. For $θ>0$ we find that $\frac{d}{dr}P=0$ when $r=\sin\theta\cos\theta$. So in both cases we obtain maximum purity when
 
 $$ r = \frac{p}{q} = |\sin\theta\cos\theta|  = \left|\frac{1}{2}\sin2\theta\right|. $$
 
