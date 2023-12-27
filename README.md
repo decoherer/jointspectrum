@@ -123,6 +123,7 @@ $$ f_\mathrm{JSA}(x,y) = e^{-p(x+y)^2} e^{-q(y\cos\theta+x\sin\theta)^2} $$
 $$ f_\mathrm{JSA}(x,y) = e^{-(p+q\sin^2\theta)x^2} e^{-2(p+q\sin\theta\cos\theta)xy} e^{-(p+q\cos^2\theta)y^2}$$
 
 Define:
+
 $$ A = p+q\sin^2\theta $$
 
 $$ B = -(p+q\sin\theta\cos\theta) $$
