@@ -139,7 +139,7 @@ Also defining $r ≡ p/q$, the purity is
 
 $$ P = \sqrt{1 - \frac{B^2}{AC}} = \sqrt{1 - \frac{(r+\sin\theta\cos\theta)^2}{(r+\sin^2\theta)(r+\cos^2\theta)}} $$
 
-We can observe that unit purity is obtained when $θ<0$ and $r=|\sin\theta\cos\theta|$. For $θ>0$ we find that $\frac{d}{dr}P=0$ when $r=\sin\theta\cos\theta$. So in both cases we obtain maximum purity when
+We can observe that unit purity is obtained when $-\tfrac{\pi}{2} < \theta < 0$ and $r=|\sin\theta\cos\theta|$. For $0 < \theta < \tfrac{\pi}{2}$ we find that $\frac{d}{dr}P=0$ when $r=\sin\theta\cos\theta$. So in both cases we obtain maximum purity when
 
 $$ r = \frac{p}{q} = |\sin\theta\cos\theta|  = \left|\frac{1}{2}\sin2\theta\right|. $$
 
