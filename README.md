@@ -57,7 +57,9 @@ $$ P = \sqrt{1-\frac{B^2}{AC}}. $$
 Define:
 
 $$ A = \frac{1+\mu^2}{2(1-\mu^2)} \alpha_1^2 $$
+
 $$ B = \frac{\mu}{1-\mu^2} \alpha_1\alpha_2 $$
+
 $$ C = \frac{1+\mu^2}{2(1-\mu^2)} \alpha_2^2 $$
 
 Then $f$ has the following Schmidt decomposition [[ref]](https://arxiv.org/abs/quant-ph/0305192):
@@ -75,8 +77,11 @@ and $H_n(x)$ are the Hermite polynomials [[ref]](https://en.wikipedia.org/wiki/H
 <!-- $H_0(x)=1$, $H_1(x)=2x$, $H_2(x)=4x^2-2$, $H_3(x)=8x^3-12x$, $H_4(x)=16x^4-48x^2+12$, ... -->
 
 $$ H_0(x) = 1 $$
+
 $$ H_1(x) = 2x $$
+
 $$ H_2(x) = 4x^2 - 2 $$
+
 $$ H_3(x) = 8x^3 - 12x $$
 
 Furthermore, the Schmidt number K and purity P are
