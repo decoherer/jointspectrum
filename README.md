@@ -86,7 +86,7 @@ $$ H_3(x) = 8x^3 - 12x $$
 
 Furthermore, the Schmidt number $K$ and purity $P$ are
 
-$$ P = \frac{1}{K} = \frac{1-\mu^2}{1+\mu^2}. $$
+$$ P = \frac{1}{K} = \sum_{n=0}^\infty λ_n^2 = \frac{1-\mu^2}{1+\mu^2}. $$
 
 Observe that the quantity
 
@@ -228,3 +228,155 @@ for P1,P2 in [(0,0.01),(0.01,0.01),(0.1,0.1),(0.5,0.5),(0.9,0.9),(0.99,0.99)]:
     (0.90,0.90) → 0.994475
     (0.99,0.99) → 0.999949
     
+
+## Hermite-Gaussian temporal modes
+
+We will define the temporal modes as the standard Hermite-Gaussian functions:
+
+$$ f(t) = \frac{1}{\sqrt{2ⁿn!}} H_n\left(\tfrac{t}{σ_t}\right) e^{-\tfrac{1}{2}\left(\frac{t}{σ_t}\right)^2}$$
+
+$$ σ_t = \frac{ τ_\textrm{FWHM} }{ 2\sqrt{\ln{2}} } $$
+
+The amplitude never exceeds one which will allow us to enforce subunity gain. Note that $τ_\textrm{FWHM}$ is the full-width-half-max of the $n=0$ mode (half-max intensity not amplitude).
+
+The first four modes are plotted for $τ_\textrm{FWHM}$ = 0.1ns.
+
+
+
+```python
+from wavedata import Wave
+ws = [hermitegausstemporalmode(n,dt=0.1,num=501).rename(f"n={n}") for n in range(4)]
+Wave.plots(*ws,l='0123',x='time (ns)',y='relative amplitude',scale=(2,1),fork=0,grid=1);
+```
+
+
+![png](README_files/README_10_0.png)
+
+
+Modes for a particular value of $τ_\mathrm{FWHM}$ form a complete basis and therefore are orthogonal.
+
+
+```python
+a = hermitegausstemporalmode(0,dt=0.1)
+b = hermitegausstemporalmode(2,dt=0.1)(a.x)
+(a*b).area()
+```
+
+
+
+
+    5.001469104277204e-06
+
+
+
+## Hermite-Gaussian spectral modes
+
+The spectral modes are the Fourier transform of the temporal modes and are the same except for scaling:
+
+$$ F(ω) = \frac{1}{σ_ω\sqrt{2ⁿn!}} H_n\left(\tfrac{ω}{σ_ω}\right) e^{-\tfrac{1}{2}\left(\frac{ω}{σ_ω}\right)^2}$$
+
+$$ σ_ω = \frac{ 1 }{ σ_t } $$
+
+These relations are also helpful:
+
+$$ σ_ω = \frac{ ω_\textrm{FWHM} }{ 2\sqrt{\ln{2}} } $$
+
+$$ ω = 2πf $$
+
+$$ σ_ω = 2πσ_f $$
+
+$$ σ_f = \frac{ f_\textrm{FWHM} }{ 2\sqrt{\ln{2}} } $$
+
+And for the $n=0$ mode only we also have:
+
+$$ f_\textrm{FWHM} = \frac{2\ln{2}}{πτ_\textrm{FWHM}} $$
+
+
+
+
+
+```python
+print(hermitegaussspectralmode(n=0,λ=1560,dt=0.1,dλ=0.2,num=501,ghz=0).area())
+ws = [hermitegaussspectralmode(n,λ=1560,dt=0.1,dλ=0.2,num=501,ghz=1).rename(f"n={n}") for n in range(4)]
+Wave.plots(*[w/ws[0].max() for w in ws],l='0123',x='Δf (GHz)',y='relative amplitude',scale=(2,1),fork=0);
+```
+
+    1.0000000001358058
+    
+
+
+![png](README_files/README_14_1.png)
+
+
+## Hermite-Gauss mode upconversion
+
+Let's assume perfect phase matching for now. We can achieve near 100% upconversion when the pump (escort) pulse is much longer than the input pulse, which is to be expected since the pump then appears to be cw as far as the input pulse is concerned.
+
+
+```python
+def modeupconversionplot(n,m,λ=1560,dt=0.1,dλ=0.2,num1=1001,num3=201):
+    a = hermitegaussspectralmode(n,λ,dt=dt,dλ=dλ,num=num1)
+    ts = (1,0.1)
+    bs = [fjcahop(m,λ,λ,dt=t,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3) for t in ts]
+    cs = [innerproduct(a,b) for b in bs]
+    ηs = [(c**2).area()/(a**2).area() for c in cs]
+    # cs,ηs = zip(*[upconvertedmode(t,n,m,λ,dt=dt,dλ=dλ,num1=num1,num3=num3) for t in ts])
+    ws = [invnm2ghz(c)/a.max() for c in cs]
+    ws = [c.rename(f'output, {t:g}ns escort, η={η:.3f}') for c,t,η in zip(ws,ts,ηs)]
+    w0 = (invnm2ghz(a)/a.max()).rename('input, 0.1ns FWHM')
+    Wave.plots(w0,*ws,x='Δf (GHz)',y='relative amplitude',c='120',l='022',scale=(1.5,1),fork=0)
+modeupconversionplot(n=0,m=0)
+```
+
+
+![png](README_files/README_16_0.png)
+
+
+The situation is similar when the input pulse is a higher order mode.
+
+
+```python
+modeupconversionplot(n=3,m=0)
+```
+
+
+![png](README_files/README_18_0.png)
+
+
+The efficiency falls off faster for higher order modes.
+
+
+```python
+def upconvertedefficiency(tescort,n,m,λ=1560,dt=0.1,dλ=0.2,num1=201,num3=201):
+    a = hermitegaussspectralmode(n,λ,dt=dt,dλ=dλ,num=num1)
+    b = fjcahop(m,λ,λ,dt=tescort,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3)
+    c = innerproduct(a,b)
+    return (c**2).area()/(a**2).area()
+def ηvst(n,m):
+    ts = np.linspace(0.005,0.5,100)
+    ηs = [upconvertedefficiency(t,n,m) for t in ts]
+    return Wave(ηs,ts,f"n={n}")
+Wave.plots(*[ηvst(n,0) for n in range(4)],x='escort pulse width (ns)',y='upconversion efficiency',
+    legendtext='0.1ns input pulse\nescort mode 0\ninput mode:',scale=(1.5,1),grid=1,xlim=(0,0.5),fork=0);
+```
+
+
+![png](README_files/README_20_0.png)
+
+
+Now let's look at the situation where the input pulse is a Gaussian and the escort pulse is a higher order mode. The results are quite different.
+
+
+```python
+modeupconversionplot(n=0,m=1)
+Wave.plots(*[ηvst(0,m).rename(f"m={m}") for m in range(4)],x='escort pulse width (ns)',y='upconversion efficiency',
+    legendtext='0.1ns input pulse\ninput mode 0\nescort mode:',scale=(1.5,1),grid=1,xlim=(0,0.5),fork=0);
+```
+
+
+![png](README_files/README_22_0.png)
+
+
+
+![png](README_files/README_22_1.png)
+

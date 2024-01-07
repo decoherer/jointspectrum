@@ -2,17 +2,59 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy import exp,pi,log,sin,cos,inf,sqrt
-from wavedata import Wave2D,Wave,list2str,track,gaussianproduct,sinc
+from wavedata import Wave2D,Wave,list2str,track,gaussianproduct,sinc,wrange
 import datetime
-# from joblib import Memory
-# memory = Memory('j:/backup', verbose=0) # use as @memory.cache
+from joblib import Memory
+memory = Memory('j:/backup', verbose=0) # use as @memory.cache
 
+class JointSpectrum(Wave2D):
+    def ghz2invnm(self,λx,λy):
+        return JointSpectrum(self,xs=self.xs/299792458+1/λx,ys=self.ys/299792458+1/λy)
+    def invnm2ghz(self,x0=None,y0=None):
+        x0 = x0 if x0 is not None else self.xs[len(self.xs)//2]
+        y0 = y0 if y0 is not None else self.ys[len(self.ys)//2]
+        return JointSpectrum(self,xs=299792458*(self.xs-x0),ys=299792458*(self.ys-y0))
+    def fplot(self,**plotargs):
+        self.invnm2ghz().plot(x='Δf (GHz)',y='Δf (GHz)',legendtext=f"P = {1/schmidtK(self):g}",**plotargs)
+        return self
+def invnm2ghz(w):
+    if 1==len(w.shape):
+        return Wave(w.y,299792458*(w.x-w.x[len(w)//2]))
+    return JointSpectrum(w,xs=299792458*(w.xs-w.xs[len(w.xs)//2]),ys=299792458*(w.ys-w.ys[len(w.ys)//2]))
+def hermitegaussmode(n,x,peaknorm=False):
+    cc = [1,0.857764,0.810358,0.78268,0.763404,0.74873,0.736941,0.727123,0.71873,0.711415,0.704941,0.699142,0.693895,0.689107,0.684708,0.680642,0.676863,0.673335,0.670029,0.666918,0.663983,0.661204,0.658567,0.656059,0.653667,0.651383,0.649197,0.647101,0.645089,0.643155,0.641292,0.639496,0.637763,0.636088,0.634468,0.632899,0.631379,0.629904,0.628473,0.627082,0.62573,0.624414,0.623133,0.621885,0.620669,0.619482,0.618324,0.617193,0.616089,0.615009,0.613953,0.61292,0.611909,0.610919,0.609949,0.608999,0.608067,0.607154,0.606258,0.605378,0.604515,0.603668,0.602835,0.602017,0.601213,0.600423,0.599646,0.598882,0.59813,0.59739,0.596662,0.595945,0.595239,0.594544,0.593859,0.593184,0.592518,0.591863,0.591216,0.590579,0.58995,0.58933,0.588718,0.588115,0.587519,0.586931,0.58635,0.585777,0.585211,0.584651,0.584099,0.583553,0.583014,0.582482,0.581955,0.581435,0.58092,0.580411,0.579908,0.579411]
+    c = 1/cc[n] if peaknorm else 1
+    from scipy.special import hermite as H
+    return c * H(n)(x) * np.exp(-0.5*x*x) / np.sqrt(2.**n * np.math.factorial(n))
+def hermitegausstemporalmode(n,dt,num=501): # dt = FWHM pulse width of mode 0
+        σ = 0.5/sqrt(log(2))*dt
+        xs = np.linspace(-dt*sqrt(16+n),+dt*sqrt(16+n),num)
+        return Wave(hermitegaussmode(n,xs/σ),xs)
+def hermitegaussspectralmode(n,λ,dt,dλ=30,num=501,ghz=False,debug=False):
+    def energy(x): # time-bandwidth product for intensity ΔtFWHM*ΔfFWHM = 2ln2/π = 0.4413 (Seigman p334)
+        ΔfFWHM = 2*log(2)/pi/(dt*1e-9) # in Hz
+        σf = 0.5/sqrt(log(2))*ΔfFWHM
+        return 1/(2*pi*σf) * hermitegaussmode(n,(1/λ-x)*1e9*299792458/σf)
+    f,df = 1/λ,dλ/λ**2
+    xs = np.linspace(f-df,f+df,num)
+    fs = (xs-1/λ)*299792458
+    w = Wave(energy(xs)*1e9*299792458*sqrt(2*pi),xs)
+    if debug and 0==n:
+        b = fjcahop(n,λ,λ,dt,L=0,dλ1=dλ,dλ3=dλ,num1=num,num3=num)
+        print(b[:,b.ny//2].area(),w.area())
+        Wave.plots(w,b[:,b.ny//2],c='0k',l='04')
+    return Wave(w.y,fs) if ghz else w
 def efficiency(w1,w0):
     return w1.sqr().volume()/w0.sqr().volume()
 def integrate(f,g): # computes ∫ f(x,y) g(y,z) dy
     assert f.dy==g.dx and np.allclose(f.ys,g.xs)
-    return g.dx * np.array(f) @ np.array(g)
-    # return Wave2D(g.dx * np.array(f) @ np.array(g),xs=f.xs,ys=g.ys)
+    # return g.dx * np.array(f) @ np.array(g)
+    return JointSpectrum(g.dx * np.array(f) @ np.array(g),xs=f.xs,ys=g.ys)
+def innerproduct(u,g): # computes ∫ u(y) g(y,z) dy if g is 2D else ∫ u(y) g(y) dy 
+    def area(a,b): # ∫ a(x) b(x) dx
+        assert np.allclose(a.x,b.x)
+        return (a*b).area()
+    return area(u,g) if 1==len(g.shape) else Wave([area(u,b) for b in g.xwaves()],g.ys)
 def schmidtK(ww):
     # u,s,vT = np.linalg.svd(ww, full_matrices=False, compute_uv=True, hermitian=False)
     # v = np.array(vT).transpose()
@@ -73,7 +115,7 @@ def ellipticalgaussianmodetest(a=2,b=0.7,c=0.5,num=3):
     xs,ys = np.linspace(-4,4,101),np.linspace(-4,4,101)
     yy,xx = np.meshgrid(ys,xs)
     zz = exp(-a*xx**2) * exp(+2*b*xx*yy) * exp(-c*yy**2)
-    f0 = Wave2D(zz,xs=xs,ys=ys)
+    f0 = JointSpectrum(zz,xs=xs,ys=ys)
     f0.plot(legendtext=f'rotated elliptical gaussian\nP={p:g}',save='rotated elliptical gaussian')
     def u(n,x):
         from scipy.special import hermite as H
@@ -117,8 +159,11 @@ def normalizeθσρ(θ,σ,ρ):
 def ellipticalgaussianpurity(a,b,c):
     return np.sqrt(1-b**2/(a*c))
 def apodizedmaxpurity(θ): # θ = phase matching angle
-    r = 0.5*sin(2*θ) # r = p/q = optimal bandwidth ratio
+    r = np.abs(0.5*sin(2*θ)) # r = p/q = optimal bandwidth ratio
     return ellipticalgaussianpurity(a=r+sin(θ)**2, b=-r-sin(θ)*cos(θ), c=r+cos(θ)**2)
+def fcapodizedmaxpurity(ϕ): # ϕ = phase matching angle
+    r = np.abs(0.5*sin(2*ϕ)) # r = p/q = optimal bandwidth ratio
+    return ellipticalgaussianpurity(a=r+sin(ϕ)**2, b=+r-sin(ϕ)*cos(ϕ), c=r+cos(ϕ)**2)
 def fcspdcpurity(P1,P2): # P1 = JSA purity, P2 = JCA purity
     return np.sqrt(1-(1-P1*P1)*(1-P2*P2)/(1+P1*P2)**2)
 # wavelength based joint amplitudes
@@ -136,7 +181,7 @@ def fλjsa(λ1,λ2,dt,L=10,sell='ktpwg',Type='yzy',dλ1=30,dλ2=300,num1=201,num
     xs,ys = np.linspace(λ1-dλ1,λ1+dλ1,num1),np.linspace(λ2-dλ2,λ2+dλ2,num2)
     yy,xx = np.meshgrid(ys,xs)
     zz = phasematching(xx,yy) * energy(xx,yy)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     return w
 def fλjca(λ1,λ3,dt,L=10,sell='ktpwg',Type='yzy',dλ1=300,dλ3=30,num1=501,num3=201,apodized=True):
     from sellmeier import polingperiod
@@ -156,7 +201,7 @@ def fλjca(λ1,λ3,dt,L=10,sell='ktpwg',Type='yzy',dλ1=300,dλ3=30,num1=501,num
     Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
     yy,xx = np.meshgrid(ys,xs)
     zz = phasematching(xx,yy) * energy(xx,yy,norm=1)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     return w
 def fλfilter(λ1,λ3,Δλ3=np.inf,dλ1=300,dλ3=30,num1=501,num3=201):
     def energy(x,y):
@@ -169,10 +214,27 @@ def fλfilter(λ1,λ3,Δλ3=np.inf,dλ1=300,dλ3=30,num1=501,num3=201):
     Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
     yy,xx = np.meshgrid(ys,xs)
     zz = energy(xx,yy) * filter(xx,yy)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     return w
 def fpure(λ1,λ3,Δλ1,Δλ3,dλ1=300,dλ3=30,num1=501,num3=201):
     ...
+def fjsabest(λ1,λ2,dt,sell='ktpwg',Type='yzy',dλ=30,num1=1001,num2=1001):
+    dλ1,dλ2 = dλ,dλ*(λ2/λ1)**2
+    θ = phasematchangle(λ1,λ2,sell=sell,Type=Type)
+    # P = apodizedmaxpurity(θ)
+    # print(' P',P)
+    # def energy(x,y): return exp(-2*log(2)*((1/λ1-x+1/λ2-y)*1e9*299792458/ΔfFWHM)**2) # E = exp(-2*log(2)*(f-f0)**2/ΔfFWHM**2)
+    ΔfFWHM = 2*log(2)/pi/(dt*1e-9) # time-bandwidth product for intensity ΔtFWHM*ΔfFWHM = 2ln2/π = 0.4413 (Seigman p334)
+    p = 2*log(2)*(1e9*299792458/ΔfFWHM)**2
+    q = p/np.abs(0.5*sin(2*θ))
+    f1,f2,df1,df2 = 1/λ1,1/λ2,dλ1/λ1**2,dλ2/λ2**2
+    xs,ys = np.linspace(f1-df1,f1+df1,num1),np.linspace(f2-df2,f2+df2,num2)
+    Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
+    yy,xx = np.meshgrid(ys,xs)
+    zz = exp(-p*(xx-1/λ1+yy-1/λ2)**2) * exp(-q*((xx-1/λ1)*sin(θ)+(yy-1/λ2)*cos(θ))**2)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
+    return w
+
 # frequecy based joint amplitudes
 def fjsa(λ1,λ2,dt,L=10,sell='ktpwg',Type='yzy',dλ1=30,dλ2=300,num1=201,num2=501,apodized=True,getangle=False,plotangles=False): # shape=(num1,num2)
     from sellmeier import polingperiod
@@ -191,7 +253,7 @@ def fjsa(λ1,λ2,dt,L=10,sell='ktpwg',Type='yzy',dλ1=30,dλ2=300,num1=201,num2=
     Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
     yy,xx = np.meshgrid(ys,xs)
     zz = phasematching(xx,yy) * energy(1/xx,1/yy)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     if getangle or plotangles:
         def angle(dx,dy):
             return 180/np.pi*np.arctan2(-dy,dx)
@@ -211,6 +273,8 @@ def fjca(λ1,λ3,dt,L=10,sell='ktpwg',Type='yzy',dλ1=300,dλ3=30,num1=501,num3=
     def period(x,y):
         return polingperiod(w1=1/x,w2=1/(y-x),sell=sell,Type=Type)
     def phasematching(x,y):
+        if 0==L:
+            return 1
         if apodized:
             return exp(-0.193*( 2*pi * (1/period(x,y)-1/period(1/λ1,1/λ3)) * L*1e3/2 )**2)
         return sinc( 2*pi * (1/period(x,y)-1/period(1/λ1,1/λ3)) * L*1e3/2 )
@@ -226,7 +290,7 @@ def fjca(λ1,λ3,dt,L=10,sell='ktpwg',Type='yzy',dλ1=300,dλ3=30,num1=501,num3=
     Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
     yy,xx = np.meshgrid(ys,xs)
     zz = phasematching(xx,yy) * energy(xx,yy,norm=1)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     if getangle or plotangles:
         def angle(dx,dy):
             return 180/np.pi*np.arctan2(-dy,dx)
@@ -241,6 +305,23 @@ def fjca(λ1,λ3,dt,L=10,sell='ktpwg',Type='yzy',dλ1=300,dλ3=30,num1=501,num3=
         v1 = Wave([f3+dq1,f3-dq1],[f1-dq3,f1+dq3],f'constant Δk {angle(dq3,-dq1):.1f}°',c='w',l='1') # direction of constant energy: (x,y) = (dq3,-dq1) or (-dq3,dq1)
         if plotangles: Wave.plots(u0,u1,v0,v1,x='1/λ₁ (1/nm)',y='1/λ₃ (1/nm)',image=w,save=f'JCA angles, {λ1}λ1 {λ3}λ3 {sell} {Type} {L:g}mm {dt:g}ns')
     return angle(dq3,-dq1) if getangle else w
+def fjcahop(n,λ1,λ3,dt,L=10,sell='ktpwg',Type='yzy',dλ1=300,dλ3=30,num1=501,num3=201): # higher order pump
+    from sellmeier import polingperiod
+    def period(x,y):
+        return polingperiod(w1=1/x,w2=1/(y-x),sell=sell,Type=Type)
+    def phasematching(x,y):
+        return 1 if 0==L else exp(-0.193*( 2*pi * (1/period(x,y)-1/period(1/λ1,1/λ3)) * L*1e3/2 )**2)
+    def energy(x,y): # time-bandwidth product for intensity ΔtFWHM*ΔfFWHM = 2ln2/π = 0.4413 (Seigman p334)
+        ΔfFWHM = 2*log(2)/pi/(dt*1e-9) # in Hz
+        σf = 0.5/sqrt(log(2))*ΔfFWHM
+        return 1/(2*pi*σf) * hermitegaussmode(n,(+1/λ1-x-1/λ3+y)*1e9*299792458/σf)
+        # return exp(-2*log(2)*((+1/λ1-x-1/λ3+y)*1e9*299792458/ΔfFWHM)**2)
+    f1,f3,df1,df3 = 1/λ1,1/λ3,dλ1/λ1**2,dλ3/λ3**2
+    xs,ys = np.linspace(f1-df1,f1+df1,num1),np.linspace(f3-df3,f3+df3,num3)
+    Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
+    yy,xx = np.meshgrid(ys,xs)
+    zz = phasematching(xx,yy)*energy(xx,yy)*1e9*299792458*sqrt(2*pi)
+    return JointSpectrum(zz,xs=xs,ys=ys)
 def phasematchangle(λ1,λ2,sell='ktpwg',Type='yzy',temp=20,npy=None,npz=None,degrees=False):
     from sellmeier import qpmwavelengths,groupindex
     # θ = atan( (k'(ωp)-k'(ωs)) / (k'(ωp)-k'(ωi)) )
@@ -266,9 +347,8 @@ def phasematchangleplot(sell='ktpwg',Type='yzy',temp=20,npy=None,npz=None,x0=500
         aspect=1,colormap='terrain_r',save=f'phasematchangleplot {sell} {Type}')
 def frequencyconversionangle(λ1,λe,sell='ktpwg',Type='yzy',temp=20,npy=None,npz=None,degrees=False): # λ2 = escort (pump) wavelength
     from sellmeier import qpmwavelengths,groupindex
-    # θ = atan( (k'(ωp)-k'(ωs)) / (k'(ωp)-k'(ωi)) )
-    # k'(ω) = 1/vg = inverse group velocity = c * group index
     λ1,λ2,λ3 = qpmwavelengths(λ1,λe)
+    print('λ1,λ2,λ3',λ1,λ2,λ3)
     ngs = [groupindex(λ,sell+s,temp) for λ,s in zip((λ1,λ2,λ3),Type)]
     θ = np.arctan2( ngs[1]-ngs[0] , ngs[2]-ngs[1] )
     # θ0,Δθ0 = np.pi/8,np.pi*3/180 # phase wrap-around location
@@ -326,7 +406,7 @@ def fcigar(λ1,λ2,θ,Δλ1=10,Δλ2=1,dλ1=30,dλ2=30,num1=201,num2=201,norm=0)
     Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
     yy,xx = np.meshgrid(ys,xs)
     zz = gauss(xx,yy,norm)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     return w
 def frandom(λ1=780,λ2=780,dλ1=30,dλ2=30,num1=201,num2=201,maxpurity=1,norm=1):
     def r():
@@ -442,7 +522,7 @@ def upconversionidentitymatrix(aspect=1,plotit=1):
     print('efficiency',efficiency(w,u))
     w.plot(aspect=1,show=plotit)
 
-def ffilter(λ1,λ3,Δλ3=np.inf,dλ1=300,dλ3=30,num1=201,num3=201,δfuncwidth=1,halfpass=False,gaussδfunc=False):
+def ffilter(λ1,λ3,Δλ3=np.inf,dλ1=300,dλ3=30,num1=201,num3=201,δfuncwidth=1,halfpass=False,gaussδfunc=False,gaussfilter=False):
     f1,f3,df1,df3,Δf3 = 1/λ1,1/λ3,dλ1/λ1**2,dλ3/λ3**2,Δλ3/λ3**2
     def energy(x,y,norm=1):
         f2 = f3 - f1
@@ -455,12 +535,14 @@ def ffilter(λ1,λ3,Δλ3=np.inf,dλ1=300,dλ3=30,num1=201,num3=201,δfuncwidth=
     def filter(x,y):
         if halfpass:
             return tophat(y,f3,f3+Δf3/2,Δy) # half-pass
+        if gaussfilter:
+            return exp(-0.5*(y-f3)**2/Δf3**2)
         return 1 if np.isposinf(Δf3) else tophat(y,f3-Δf3/2,f3+Δf3/2,Δy)
     xs,ys = np.linspace(f1-df1,f1+df1,num1),np.linspace(f3-df3,f3+df3,num3)
     Δx,Δy = xs[1]-xs[0],ys[1]-ys[0]
     yy,xx = np.meshgrid(ys,xs)
     zz = energy(xx,yy,norm=1) * filter(xx,yy)
-    w = Wave2D(zz,xs=xs,ys=ys)
+    w = JointSpectrum(zz,xs=xs,ys=ys)
     return w
 def jcanormalizationplot(u,v): # u=jsa, v=jca
     def waveefficiency(self,original):
@@ -512,6 +594,15 @@ def pulsedupconversionpump(aspect=1,plotit=1):
     print('  w purity',1/schmidtnumber(w))
     print('efficiency',efficiency(w,u))
     w.plot(aspect=1,fewerticks=1,show=plotit)
+def feff(λ1=780,λ2=2340,res=1001,dλ=40,dt1=0.001,dt2=0.001,L1=10,L2=10,type1='yzy',type2='zzz',sell='ktpwg',plot=False,plotλ=False):
+    if plotλ:
+        u = fλjsa(λ1,λ2,dt1,L=L1,sell=sell,Type=type1,dλ1=dλ,dλ2=dλ*(λ2/λ1)**2,num1=res,num2=res)
+        v = fλjca(λ2,λ1,dt2,L=L2,sell=sell,Type=type2,dλ1=dλ*(λ2/λ1)**2,dλ3=dλ,num1=res,num3=res)
+    else:
+        u = fjsa(λ1,λ2,dt1,L=L1,sell=sell,Type=type1,dλ1=dλ,dλ2=dλ*(λ2/λ1)**2,num1=res,num2=res)
+        v = fjca(λ2,λ1,dt2,L=L2,sell=sell,Type=type2,dλ1=dλ*(λ2/λ1)**2,dλ3=dλ,num1=res,num3=res)
+    w = integrate(u,v)
+    return u,v,w
 def ktpwgexample(res=1001,dλ=40,dt1=0.001,dt2=0.001,L1=10,L2=10,plot=False,plotλ=False):
     if plotλ:
         u = fλjsa(780,2340,dt1,L=L1,sell='ktpwg',Type='yzy',dλ1=dλ,dλ2=dλ*10,num1=res,num2=res)
@@ -556,11 +647,13 @@ def schmidttest():
     f = fcigar(780,780,30,Δλ1=10,Δλ2=1,dλ1=30,dλ2=30,num1=201,num2=201,norm=1)#.plot()
     print(schmidtK(f))
     print(schmidtnumber(f,res=201))
-def filtereddegen(Δλ=np.inf,res=4001,dλ=5,dt=0.0059,L=10,plot=False):
+@memory.cache
+def filtereddegen(Δλ=np.inf,res=4001,dλ=5,dt=0.0059,L=10,jplot=False):
     u = fjsa(780,780,dt,L=L,sell='ktpwg',Type='yzy',dλ1=dλ,dλ2=dλ,num1=res,num2=res)#.plot()
     v = ffilter(780,780,Δλ3=Δλ,dλ1=dλ,dλ3=dλ,num1=res,num3=res,δfuncwidth=1,halfpass=False,gaussδfunc=False)
-    w = integrate(u,v) # print('P',1/schmidtK(w),1/schmidtnumber(w))
-    if plot:
+    w = integrate(u,v) # 
+    print('filtereddegen','dt',dt,'L',L,'P',1/schmidtK(w))#,1/schmidtnumber(w))
+    if jplot:
         save = f'filtereddegen {1000*dt:g}ps {L}mm '
         u.plot(x=f'$f_s$ (1/nm)',y=f'$f_i$ (1/nm)',fewerticks=1,aspect=1,legendtext=f"P={1/schmidtK(u):g}",save=save+(f'fi vs fs'))
         v.plot(x=f'$f_i$ (1/nm)',y=f'$f_f$ (1/nm)',fewerticks=1,aspect=1,legendtext=f"P={1/schmidtK(v):g}",save=save+(f'ff vs fi'))
@@ -575,7 +668,7 @@ def filtereddegen(Δλ=np.inf,res=4001,dλ=5,dt=0.0059,L=10,plot=False):
     ps,ηs = zip(*[pη(Δλfwhm) for Δλfwhm in Δλs])
     wp,wη = Wave([1]+list(ps),[0]+list(Δλs),'P'),Wave([0]+list(ηs),[0]+list(Δλs),'η')
     Wave.plots(wp,wη,xlim=(0,wp.x[-1]),ylim=(0,1),x='tophat filter bandwidth FWHM (nm)',grid=1,
-        save='P,η vs tophat filter bandwidth, 780 degen ktpwg 5.9ps 10mm')
+        save=f'P,η vs tophat filter bandwidth, 780 degen ktpwg {1000*dt:g}ps {L:g}mm')
     # Δλfwhm,p0,η0 = wp.maxloc(),wp.max(),wη(wp.maxloc())
     def info(P=0.939):
         Δλfwhm = wp.xaty(P)
@@ -583,12 +676,184 @@ def filtereddegen(Δλ=np.inf,res=4001,dλ=5,dt=0.0059,L=10,plot=False):
         print(f"Δλfwhm,p0,η0: {Δλfwhm:.3f}, {p0:.5f}, {η0:.5f}")
     for P in (0.9,0.939,0.99,0.999):
         info(P)
+    return Wave(wp.y,wη.y)
     # v = ffilter(780,780,Δλ3=Δλfwhm,dλ1=dλ,dλ3=dλ,num1=res,num3=res,δfuncwidth=1,halfpass=False,gaussδfunc=False)
     # w = integrate(u,v)
     # w.plot() # print(1/schmidtK(w))
+def filtereddegencompare():
+    w0 = filtereddegen(dt=0.00059* 5,L= 5).rename(f'L={ 5}mm')
+    w1 = filtereddegen(dt=0.00059*10,L=10).rename(f'L={10}mm')
+    w2 = filtereddegen(dt=0.00059*20,L=20).rename(f'L={20}mm')
+    Wave.plots(w2,w1,w0,x='η',y='P',l='023',xlim=(0,1),ylim=(-0.0,1.05),grid=1,save='filtereddegencompare')
+def cascadedpurity(λ1=780,λ2=2340,sell='ktpwg',type1='yzy',type2='zzz'):
+    θ0 = fjsa(λ1,λ2,0.0002,L=10,sell='ktpwg',Type='yzy',plotangles=0,getangle=1)/180*pi
+    θ = phasematchangle(λ1,λ2,sell=sell,Type=type1)
+    Pjsa = apodizedmaxpurity(θ)
+    ϕ0 = fjca(λ2,λ1,0.0002,L=10,sell='ktpwg',Type='zzz',plotangles=0,getangle=1)/180*pi
+    ϕ = frequencyconversionangle(λ1=λ2,λe=1/(1/λ1-1/λ2),sell=sell,Type=type2)
+    Pjca = fcapodizedmaxpurity(ϕ)
+    P = fcspdcpurity(Pjsa,Pjca)
+    print(f"θ0 {θ0:g} θ {θ:g} Pjsa {Pjsa:g} ϕ0 {ϕ0:g} ϕ {ϕ:g} Pjca {Pjca:g} P {P}")
+    def cascadedpurityplot(dt1=1.1,L1=10,L2=10,λ1=780,λ2=2340,type1='yzy',type2='zzz',sell='ktpwg',res=1001):
+        # degenηvp = filtereddegen(dt=0.00059*L1,L=L1).swapxy()
+        degenηvp = filtereddegen(dt=0.00059* 5,L= 5).swapxy()
+        # degenηvp.plot(y='η',x='P')
+        # print(degenηvp(0.939))
+        # print(degenηvp(0.99))
+        dts = wrange(0.2,8,0.2)
+        # u = fjsa(λ1,λ2,dt1,L=L1,sell=sell,Type=type1,dλ1=dλ,dλ2=dλ*(λ2/λ1)**2,num1=res,num2=res)
+        # v = fjca(λ2,λ1,dt2,L=L2,sell=sell,Type=type2,dλ1=dλ*(λ2/λ1)**2,dλ3=dλ,num1=res,num3=res)
+        # w = integrate(u,v)
+        us,vs,ws = zip(*[feff(λ1=λ1,λ2=λ2,res=res,dλ=40,dt1=0.001*dt1,dt2=0.001*dt,L1=L1,L2=L2,type1=type1,type2=type2,sell=sell) for dt in (dts)])
+        Pjsa = Wave([1/schmidtK(u) for u in us],dts,'Pjsa')
+        Pjca = Wave([1/schmidtK(v) for v in vs],dts,'Pjca')
+        Peff = Wave([1/schmidtK(w) for w in ws],dts,'Peff')
+        Ieff = Wave([w.indistinguishability() for w in ws],dts,'Ieff')
+        ηeff = Wave([efficiency(w,u) for w,u in zip(ws,us)],dts,'ηeff')
+        ηfil = Wave([degenηvp(0.99*p) for p in Peff],dts,'ηfil')
+        print(f'γ = {ηeff(Ieff.maxloc())/ηfil(Ieff.maxloc()):g} at Imax')
+        text = f'$τ_1$={dt1:g}ps\n$L_1$={L1:g}mm\n$L_2$={L2:g}mm'
+        text += f'\nγ={ηeff(Ieff.maxloc())/ηfil(Ieff.maxloc()):.1f} at max Ieff'
+        save = f'cascaded {λ1}+{λ2}{type1}, {λ2}→{λ1}{type2} τ1={dt1:g}ps L1={L1:g}mm L2={L2:g}mm {res}res'
+        Wave.plots(Pjca,Peff,Ieff,ηeff,ηfil,x='$τ_2$ (ps)',y='',legendtext=text,grid=1,
+            xlim=(0,dts[-1]),ylim=(-0.0,1.0),clip=0,
+            seed=4,c='31204',scale=(2,1),save=save) # seed 4 rygb seed 2 rybg
+        x = Ieff.maxloc()
+    dt1,L1=0.57, 5 # γ = 13.6409; γ = 7.44274; γ = 1.66183
+    dt1,L1=1.13,10 # γ = 17.2636; γ = 13.6629; γ = 6.23854
+    dt1,L1=1.70,20 # γ = 11.7542; γ = 9.7756; γ = 6.42317
+    cascadedpurityplot(dt1=dt1,L1=L1,L2= 5,λ1=780,λ2=2340,type1='zyy',type2='yzy',res=1001)
+    cascadedpurityplot(dt1=dt1,L1=L1,L2=10,λ1=780,λ2=2340,type1='zyy',type2='yzy',res=1001)
+    cascadedpurityplot(dt1=dt1,L1=L1,L2=20,λ1=780,λ2=2340,type1='zyy',type2='yzy',res=1001)
+def typeIIpurityvsλ():
+    def Pvλ():
+        λis = np.linspace(1800,3800,21)
+        def P(λ1,λ2):
+            u = fjsabest(λ1,λ2,dt=0.001)
+            return 1/schmidtK(u)
+        u0 = Wave([P(780,λi) for λi in λis],λis,780)
+        u1 = Wave(apodizedmaxpurity(phasematchangle(780,λis,sell='ktpwg',Type='yzy')),λis,780)
+        v0 = Wave([P(810,λi) for λi in λis],λis,810)
+        v1 = Wave(apodizedmaxpurity(phasematchangle(810,λis,sell='ktpwg',Type='yzy')),λis,810)
+        Wave.plots(u0,u1,v0,v1,l='2323')
+    # Pvλ()
+    def PηI(λ1,λ2,dt=0.001,dλ=30): # cw upconversion
+        u = fjsabest(λ1,λ2,dt)
+        v = fjca(λ2,λ1,dt=0.1,L=0,sell='ktpwg',Type='zzz',dλ1=dλ*(λ2/λ1)**2,dλ3=dλ,num1=1001,num3=1001)
+        w = integrate(u,v)
+        print(' *  λ1,λ2',λ1,λ2)
+        print('P',1/schmidtK(w))
+        print('η',efficiency(w,u))
+        print('I',w.indistinguishability())
+    PηI(780,2340)
+    PηI(810,3000)
+    PηI(2340,780)
+    PηI(2340,810)
+    PηI(3000,780)
+    def plotex():
+        λ1,λ2,dλ = 810,3000,30
+        u = fjsabest(λ1,λ2,dt=0.001,dλ=30); u.plot()
+        v = fjca(λ2,λ1,dt=0.1,L=0,sell='ktpwg',Type='zzz',dλ1=dλ*(λ2/λ1)**2,dλ3=dλ,num1=1001,num3=1001); v.plot()
+        w = integrate(u,v); w.plot()
+    # plotex()
+def gaussfilteredjsa(Δf=12e9,λ1=1560,λ2=1560,dt=0.1,L=30,sell='lnwg',Type='zzz',dλ1=0.5,dλ2=0.5,num1=1001,num2=1001,plot=False):
+    def gaussfilter(x,x0,xfwhm):
+        # exp(2*a*(xfwhm/2)**2)=0.5 → a = 2*ln(0.5)/xfwhm**2
+        a = 2*log(2)/xfwhm**2
+        return exp(-a*(x-x0)**2)
+    # print(gaussfilter(1561,1560,2)**2) # 0.5
+    u = fjsa(λ1=λ1,λ2=λ2,dt=dt,L=L,sell=sell,Type=Type,dλ1=dλ1,dλ2=dλ2,num1=num1,num2=num2)
+    # def rescale(ww):
+    #     ww.xs = (ww.xs-1/1560)*1e9*299792458*1e-9 # 1/nm to GHz
+    #     ww.ys = (ww.ys-1/1560)*1e9*299792458*1e-9
+    #     return ww
+    # u = rescale(u)
+    u = u.invnm2ghz()
+    w = u * gaussfilter(u.xx,0,12) * gaussfilter(u.yy,0,12)
+    if plot:
+        u.plot(x='Δf (GHz)',y='Δf (GHz)',legendtext=f"P = {1/schmidtK(u):g}")
+        w.plot(x='Δf (GHz)',y='Δf (GHz)',legendtext=f"P = {1/schmidtK(w):g}")
+        Δλ = 1e9*Δf*(1560e-9)**2/299792458
+        print(f"Δf:{Δf*1e-9:g}GHz, Δλ:{Δλ:g}nm")
+    return w.ghz2invnm(λ1,λ2)
+def hermitegaussmodeplot():
+    if 1: # hermitegaussmode test
+        xs = np.linspace(-20,20,100001)
+        ws = [Wave(hermitegaussmode(n,xs),xs,f"n={n:g}") for n in range(100)]
+        print(list2str([w.max() for w in ws],sep=','))
+        xs = np.linspace(-20,20,1001)
+        ws = [Wave(hermitegaussmode(n,xs,1),xs,f"n={n:g}") for n in range(0,100,25)]
+        Wave.plots(*ws,lw=1,scale=(2,1))
+    if 1: # hermitegausstemporalmode test
+        Wave.plots(*[hermitegausstemporalmode(n,dt=0.1,num=501) for n in range(0,4+1,1)][::-1],x='time (ns)',y='relative amplitude',save='hermitegausstemporalmodeplot')
+        # Wave.plots(*[hermitegausstemporalmode(n,dt=0.1,num=501) for n in [125,5,0]])
+    if 1: # hermitegaussspectralmode test
+        ws = [hermitegaussspectralmode(n,λ=1560,dt=0.1,dλ=0.2,num=501,ghz=0) for n in range(0,4+1,1)][::-1] # print(ws[-1].area())
+        # ws = [hermitegaussspectralmode(n,λ=1560,dt=10,dλ=0.002,num=501,ghz=0) for n in range(0,4+1,1)][::-1] # print(ws[-1].area())
+        # ws = [hermitegaussspectralmode(n,λ=1560,dt=0.01,dλ=2,num=501,ghz=0) for n in range(0,4+1,1)][::-1] # print(ws[-1].area())
+        # ws = [hermitegaussspectralmode(n,λ=1560,dt=0.01,dλ=2,num=5001,ghz=0) for n in range(0,4+1,1)][::-1] # print(ws[-1].area())
+        Wave.plots(*[w/ws[0].max() for w in ws],x='Δf (GHz)',y='relative amplitude')
+        # Wave.plots(*ws,x='Δf (GHz)',y='relative amplitude',scale=(1,1),save='hermitegaussspectralmodeplot')
+def higherorderpumptest(dλ=50,num1=201,num3=501):
+    u = fjca(1560,780,dt=0.0001,L=0,sell='ktpwg',Type='yzy',dλ1=4*dλ,dλ3=dλ,num1=num1,num3=num3)
+    v = fjcahop(0,1560,780,dt=0.0001,L=0,sell='ktpwg',Type='yzy',dλ1=4*dλ,dλ3=dλ,num1=num1,num3=num3)
+    vv = fjcahop(3,1560,780,dt=0.0001,L=0,sell='ktpwg',Type='yzy',dλ1=4*dλ,dλ3=dλ,num1=num1,num3=num3)
+    # print(u.shape[1]),len(u[u.xs,:])),len(u.ys))
+    uy,vy,vvy = [w[w.nx//2,:] for w in (u,v,vv)]
+    Wave.plots(uy,vy,vvy,l='023',scale=(3,1))
+    print(uy[u.ny//2]/vy[v.ny//2])
+    # u.plot(aspect=1)
+    # v.plot(aspect=1)
+    # vv.plot(aspect=1)
+def innerproducttest():
+    dλ=200;num1=501;num3=101
+    v = fjcahop(0,1560,1560,dt=0.0001,L=0,sell='ktpwg',Type='yzy',dλ1=dλ,dλ3=dλ,num1=num1,num3=num3)
+    print(v.nx,len(v[:,v.ny//2]))
+    a = hermitegaussspectralmode(0,1560,dt=0.0001,dλ=200,num=501)
+    Wave.plots(v[:,v.ny//2],a,l='0123')
+    aa = v[:,v.ny//2:v.ny//2+2].T()
+    bb = aa.integrate(v)
+    print('aa.shape',aa.shape,'v.shape',v.shape,'bb.shape',bb.shape)
+    b = innerproduct(a,v)
+    print(innerproduct(a,v[:,v.ny//2]))
+    Wave.plots(bb[0,:],b,c='0k',l='04')
+def modeupconversionplot(ninput,nescort,λ=1560,dt=0.1,dλ=0.2,num1=1001,num3=201):
+    a = hermitegaussspectralmode(ninput,λ,dt=dt,dλ=dλ,num=num1)
+    ts = (1,0.1)
+    bs = [fjcahop(nescort,λ,λ,dt=t,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3) for t in ts]
+    cs = [innerproduct(a,b) for b in bs]
+    ηs = [(c**2).area()/(a**2).area() for c in cs]
+    ws = [invnm2ghz(c)/a.max() for c in cs]
+    ws = [c.rename(f'output, {t:g}ns escort, η={η:.3f}') for c,t,η in zip(ws,ts,ηs)]
+    w0 = (invnm2ghz(a)/a.max()).rename('input, 0.1ns FWHM')
+    Wave.plots(w0,*ws,x='Δf (GHz)',y='relative amplitude',c='120',l='022',scale=(1.5,1),fork=0)
+def lntelcom(λ=1560,dt=0.1,dλ=0.5,num1=1001,num3=101):
+    a = hermitegaussspectralmode(0,λ,dt=dt,dλ=dλ,num=num1)
+    bb = fjcahop(0,λ,λ,dt=1*dt,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3)
+    # print('bb[:,bb.ny//2].area()',bb[:,bb.ny//2].area())
+    c = innerproduct(a,bb)
+    # Wave.plots(bb[:,bb.ny//2],a,l='0123')
+    Wave.plots(a,c,l='0123')
+
+    # print(c.sum()/a.sum())
+    # print(c.area()/a.area())
+    print((c**2).area()/(a**2).area())
+
+    u = gaussfilteredjsa(Δf=12e9,λ1=1560,λ2=1560,dt=0.1,L=30,sell='lnwg',Type='zzz',dλ1=0.5,dλ2=0.5,num1=num1,num2=num1) # u.fplot()
+    v0 = fjca(λ,λ,dt=1*dt,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3)
+    v = fjcahop(0,λ,λ,dt=1*dt,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3)
+    vv = fjcahop(3,λ,λ,dt=1*dt,L=0,dλ1=dλ,dλ3=dλ,num1=num1,num3=num3)
+    w0 = u.integrate(v0) #.fplot()
+    w = u.integrate(v) #.fplot()
+    ww = u.integrate(vv) #.fplot()
+    print('η',efficiency(w0,u))
+    print('η',efficiency(w,u))
+    print('η',efficiency(ww,u))
+
 
 
 if __name__ == '__main__':
+    # Wave2D
     print(datetime.datetime.now())
     # discretedeltafunctiontest()
     # tophattest()
@@ -607,16 +872,26 @@ if __name__ == '__main__':
     # ktpwgexample(res=1001,dλ=40,dt2=0.01,L2=0,plot=1) # Pjsa,Pjca,Peff,Ieff,ηeff 0.245779 0.0033583 0.247309 0.731864 0.989706
     # ktpwgexample(res=1001,dλ=40,dt2=0.0001,L2=0,plot=1) # Pjsa,Pjca,Peff,Ieff,ηeff 0.245779 0.160166 0.951406 0.457857 0.0813983
     # schmidttest()
-    # filtereddegen(Δλ=0.1,plot=1)
-    # filtereddegen(Δλ=0.02,plot=1)
+    # filtereddegen(Δλ=0.1,jplot=1)
+    # filtereddegen(Δλ=0.02,jplot=1)
     # filtereddegen()
+    # filtereddegencompare()
     # gaussianproducttest()
     # ellipticalgaussianmodetest()
-    phasematchangletest()
+    # phasematchangletest()
     # upconversionidentitymatrix(aspect=1,plotit=1)
     # tophatfilter(aspect=1,plotit=1)
     # cwupconversionpump(aspect=1,plotit=1)
     # pulsedupconversionpump(aspect=1,plotit=1)
+    # cascadedpurity(λ1=780,λ2=2340)
+    # cascadedpurity(λ1=810,λ2=2340)
+    # typeIIpurityvsλ()
+    # gaussfilteredjsa(plot=1)
+    # hermitegaussmodeplot()
+    # higherorderpumptest()
+    # innerproducttest()
+    # lntelcom()
+    modeupconversionplot(ninput=0,nescort=0)
 
     print(datetime.datetime.now())
 
